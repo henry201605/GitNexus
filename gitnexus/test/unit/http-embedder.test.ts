@@ -258,6 +258,51 @@ describe('HTTP embedding backend', () => {
       expect(results).toHaveLength(70);
     });
 
+    it('forwards dimensions in every batch when splitting large inputs', async () => {
+      process.env.GITNEXUS_EMBEDDING_URL = 'http://test:8080/v1';
+      process.env.GITNEXUS_EMBEDDING_MODEL = 'test-model';
+      process.env.GITNEXUS_EMBEDDING_DIMS = '512';
+
+      const vec512 = Array.from({ length: 512 }, (_, i) => i / 512);
+      const makeResp = (n: number) => ({
+        ok: true,
+        json: async () => ({ data: Array.from({ length: n }, () => ({ embedding: vec512 })) }),
+      });
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValueOnce(makeResp(64)).mockResolvedValueOnce(makeResp(6)),
+      );
+
+      const { embedBatch } = await import('../../src/core/embeddings/embedder.js');
+      const results = await embedBatch(Array.from({ length: 70 }, (_, i) => `text ${i}`));
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(results).toHaveLength(70);
+
+      // Verify dimensions is sent in BOTH batch requests
+      const body0 = JSON.parse((fetch as any).mock.calls[0][1].body);
+      const body1 = JSON.parse((fetch as any).mock.calls[1][1].body);
+      expect(body0.dimensions).toBe(512);
+      expect(body1.dimensions).toBe(512);
+    });
+
+    it('rejects non-numeric GITNEXUS_EMBEDDING_DIMS values', async () => {
+      process.env.GITNEXUS_EMBEDDING_URL = 'http://test:8080/v1';
+      process.env.GITNEXUS_EMBEDDING_MODEL = 'test-model';
+      process.env.GITNEXUS_EMBEDDING_DIMS = '1024abc';
+
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ data: [{ embedding: mockVec }] }),
+        }),
+      );
+
+      const { embedText } = await import('../../src/core/embeddings/embedder.js');
+      await expect(embedText('test')).rejects.toThrow('must be a positive integer');
+    });
+
     it('rejects initEmbedder when using HTTP backend', async () => {
       process.env.GITNEXUS_EMBEDDING_URL = 'http://test:8080/v1';
       process.env.GITNEXUS_EMBEDDING_MODEL = 'test-model';

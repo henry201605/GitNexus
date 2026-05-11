@@ -40,8 +40,11 @@ const readConfig = (): HttpConfig | null => {
   const rawDims = process.env.GITNEXUS_EMBEDDING_DIMS;
   let dimensions: number | undefined;
   if (rawDims !== undefined) {
+    if (!/^\d+$/.test(rawDims)) {
+      throw new Error(`GITNEXUS_EMBEDDING_DIMS must be a positive integer, got "${rawDims}"`);
+    }
     const parsed = parseInt(rawDims, 10);
-    if (Number.isNaN(parsed) || parsed <= 0) {
+    if (parsed <= 0) {
       throw new Error(`GITNEXUS_EMBEDDING_DIMS must be a positive integer, got "${rawDims}"`);
     }
     dimensions = parsed;
@@ -94,10 +97,10 @@ interface EmbeddingItem {
  * @param dimensions - Optional output-vector size. When provided, sent as
  *   the `dimensions` field in the request body. Endpoints that implement
  *   Matryoshka truncation (OpenAI text-embedding-3-*, Cohere embed-v3,
- *   Voyage) return a truncated vector at that size; endpoints that do
- *   not recognise the field are expected to ignore it. Omit to preserve
- *   the pre-existing request shape (`{ input, model }`) for backends
- *   that reject unknown fields.
+ *   Voyage) return a truncated vector at that size; endpoints that do not
+ *   recognise the field may ignore it or return 400. Leave
+ *   `GITNEXUS_EMBEDDING_DIMS` unset for strict backends that reject
+ *   unknown fields.
  */
 const httpEmbedBatch = async (
   url: string,
